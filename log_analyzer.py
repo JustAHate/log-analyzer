@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from os import path, listdir
-import getopt
+import argparse
 import sys
 import re
 from datetime import datetime
@@ -20,11 +20,9 @@ config = {
     "LOG_DIR": "./log"
 }
 
+DEFAULT_CONFIG_PATH = './log_analyzer_config.json'
 
-def get_date_from_filename(file):
-    file_name = path.basename(file)
-    reg = re.search("([0-9]{8})", file_name)
-    return datetime.strptime(reg.group(1), '%Y%m%d')
+LogFile = namedtuple('LogFile', ['log_path', 'log_date'])
 
 
 def get_last_logfile(logs_path):
@@ -32,15 +30,16 @@ def get_last_logfile(logs_path):
     latest_date = None
     for file in listdir(logs_path):
         if re.match(r'nginx-access-ui\.log-[0-9]{8}(\.gz)?$', file):
-            log_date = get_date_from_filename(file)
+            file_name = path.basename(file)
+            reg = re.search("([0-9]{8})", file_name)
+            log_date = datetime.strptime(reg.group(1), '%Y%m%d')
             if latest_date is None or log_date > latest_date:
                 latest_date = log_date
                 latest_log = file
-    LogFile = namedtuple('LogFile', ['log_path', 'log_date'])
     return LogFile(path.join(logs_path, latest_log), latest_date)
 
 
-def parse_log_file(log_file):
+def parse_log_file(log_file, threshold=100):
     logging.info(f'Parsing log file {log_file}')
     open_func = gzip.open if log_file.endswith('.gz') else open
     total_count = 0
@@ -60,8 +59,8 @@ def parse_log_file(log_file):
             total_count += 1
             yield url, float(time)
 
-    if parse_errors / total_count * 100 > 50:
-        msg = 'Unable to parse more than 50% of log'
+    if parse_errors / total_count * 100 > threshold:
+        msg = f'Unable to parse more than {threshold}% of log'
         logging.error(msg)
         raise Exception(msg)
 
@@ -116,33 +115,26 @@ def write_report(data, report_path):
         r.write(report)
 
 
-def parse_config(conf_path):
-    try:
-        with open(conf_path, 'r') as f:
-            return(json.load(f))
-    except FileNotFoundError:
-        msg = 'Config file not found.'
-        logging.error(msg)
-        raise FileNotFoundError(msg)
-
-
-def get_config(default_config):
-    DEFAULT_CONFIG_PATH = './log_analyzer_config.json'
+def get_config(default_config, external_config_path):
     external_config = None
-    external_config_path = DEFAULT_CONFIG_PATH
-
-    opts, args = getopt.getopt(sys.argv[1:], '', 'config=')
-    for opt, arg in opts:
-        if '--config' in opt:
-            external_config_path = arg
-    external_config = parse_config(external_config_path)
+    with open(external_config_path, 'r') as f:
+        external_config = json.load(f)
 
     if external_config:
         config.update(external_config)
     return default_config
 
 
-def main(config_dict):
+def main(default_config):
+    external_config_path = DEFAULT_CONFIG_PATH
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config")
+    args = parser.parse_args()
+    if args.config:
+        external_config_path = args.config
+    config_dict = get_config(default_config, external_config_path)
+
     logging.basicConfig(
         filename=config_dict.get('LOG_FILE'),
         level=logging.INFO,
@@ -164,14 +156,17 @@ def main(config_dict):
         logging.info(msg)
         sys.exit(msg)
 
-    parse_log_gen = parse_log_file(log_path)
+    parse_log_gen = parse_log_file(
+        log_path,
+        config_dict.get('PARSE_ERROR_THRESHOLD')
+    )
     data = process_logs(parse_log_gen, config_dict.get('REPORT_SIZE'))
     write_report(data, new_report_path)
 
 
 if __name__ == "__main__":
     try:
-        main(get_config(config))
+        main(config)
     except KeyboardInterrupt as e:
         logging.error(e)
         raise e

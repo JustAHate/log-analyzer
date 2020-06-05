@@ -2,16 +2,9 @@ import unittest
 from datetime import datetime
 import tempfile
 import os
-import json
 from log_analyzer import *
 
 class TestLogAnalyzer(unittest.TestCase):
-
-    def test_get_date_from_filename(self):
-        self.assertEqual(
-            get_date_from_filename('/some/path/20200220'),
-            datetime(2020, 2, 20, 0, 0)
-        )
 
     def test_get_last_logfile(self):
         temp_dir = tempfile.mkdtemp()
@@ -80,25 +73,6 @@ class TestLogAnalyzer(unittest.TestCase):
             os.remove(report_path)
             os.rmdir(temp_dir)
 
-    def test_parse_config(self):
-        temp_dir = tempfile.mkdtemp()
-        temp_conf_path = os.path.join(temp_dir, f'log_analyzer_conf.json')
-        test_conf = {
-            'REPORT_SIZE': 500,
-            'REPORT_DIR': './reports',
-            'LOG_DIR': './log',
-            'LOG_FILE': './log_analyzer.log'
-        }
-        with open(temp_conf_path, 'w') as f:
-            json.dump(test_conf, f)
-
-        try:
-            parsed_conf = parse_config(temp_conf_path)
-            self.assertEqual(parsed_conf, test_conf)
-        finally:
-            os.remove(temp_conf_path)
-            os.rmdir(temp_dir)
-
     def test_get_config(self):
         test_conf = {
             'REPORT_SIZE': 500,
@@ -107,7 +81,10 @@ class TestLogAnalyzer(unittest.TestCase):
             'LOG_FILE': './log_analyzer.log'
         }
 
-        self.assertEqual(get_config(test_conf), test_conf)
+        self.assertEqual(
+            get_config(test_conf, './log_analyzer_config.json'),
+            test_conf
+        )
 
 
 if __name__ == '__main__':
