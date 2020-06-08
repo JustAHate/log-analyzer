@@ -3,7 +3,6 @@
 
 from os import path, listdir
 import argparse
-import sys
 import re
 from datetime import datetime
 import gzip
@@ -12,6 +11,8 @@ from string import Template
 from collections import namedtuple
 import json
 import logging
+import tempfile
+import shutil
 
 
 config = {
@@ -36,7 +37,10 @@ def get_last_logfile(logs_path):
             if latest_date is None or log_date > latest_date:
                 latest_date = log_date
                 latest_log = file
-    return LogFile(path.join(logs_path, latest_log), latest_date)
+    if latest_log:
+        return LogFile(path.join(logs_path, latest_log), latest_date)
+    else:
+        return None
 
 
 def parse_log_file(log_file, threshold=100):
@@ -111,8 +115,12 @@ def write_report(data, report_path):
     with open(template_path) as f:
         template = f.read()
         report = Template(template).safe_substitute({'table_json': data})
-    with open(report_path, 'w') as r:
-        r.write(report)
+    temp = tempfile.NamedTemporaryFile('w+', delete=False)
+    try:
+        temp.write(report)
+        shutil.move(temp.name, report_path)
+    except Exception:
+        temp.close()
 
 
 def get_config(default_config, external_config_path):
@@ -121,18 +129,16 @@ def get_config(default_config, external_config_path):
         external_config = json.load(f)
 
     if external_config:
-        config.update(external_config)
+        default_config.update(external_config)
     return default_config
 
 
 def main(default_config):
-    external_config_path = DEFAULT_CONFIG_PATH
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config")
+    parser.add_argument("--config", default=DEFAULT_CONFIG_PATH)
     args = parser.parse_args()
-    if args.config:
-        external_config_path = args.config
+    external_config_path = args.config
+
     config_dict = get_config(default_config, external_config_path)
 
     logging.basicConfig(
@@ -143,18 +149,16 @@ def main(default_config):
 
     last_log_file = get_last_logfile(config_dict.get('LOG_DIR'))
     if last_log_file is None:
-        msg = 'Logs not found'
-        logging.info(msg)
-        sys.exit(msg)
+        logging.info('Logs not found')
+        return
 
     log_path, log_date = last_log_file
 
-    new_report_name = 'report-' + log_date.strftime('%Y.%m.%d' + '.html')
+    new_report_name = 'report-' + log_date.strftime('%Y.%m.%d') + '.html'
     new_report_path = path.join(config_dict.get('REPORT_DIR'), new_report_name)
     if path.isfile(new_report_path):
-        msg = 'Report for last date already exists'
-        logging.info(msg)
-        sys.exit(msg)
+        logging.info('Report for last date already exists')
+        return
 
     parse_log_gen = parse_log_file(
         log_path,
