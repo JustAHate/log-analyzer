@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime
 import tempfile
 import os
+import json
 from log_analyzer import *
 
 class TestLogAnalyzer(unittest.TestCase):
@@ -74,17 +75,18 @@ class TestLogAnalyzer(unittest.TestCase):
             os.rmdir(temp_dir)
 
     def test_get_config(self):
-        test_conf = {
-            'REPORT_SIZE': 500,
-            'REPORT_DIR': './reports',
-            'LOG_DIR': './log',
-            'LOG_FILE': './log_analyzer.log'
-        }
-
-        self.assertEqual(
-            get_config(test_conf, './log_analyzer_config.json'),
-            test_conf
-        )
+        with open('log_analyzer_config.json', 'r') as f:
+            base_conf = {
+                "spam": 'value1',
+                "eggs": 'value2'
+            }
+            file_conf = json.load(f)
+            test_conf = dict(base_conf)
+            test_conf.update(file_conf)
+            self.assertEqual(
+                get_config(base_conf, './log_analyzer_config.json'),
+                test_conf
+            )
 
 
 if __name__ == '__main__':

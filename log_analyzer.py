@@ -30,17 +30,19 @@ def get_last_logfile(logs_path):
     latest_log = None
     latest_date = None
     for file in listdir(logs_path):
-        if re.match(r'nginx-access-ui\.log-[0-9]{8}(\.gz)?$', file):
-            file_name = path.basename(file)
-            reg = re.search("([0-9]{8})", file_name)
-            log_date = datetime.strptime(reg.group(1), '%Y%m%d')
+        matches = re.match(r'(nginx-access-ui\.log-([0-9]{8})(\.gz))?$', file)
+        if matches:
+            file_name, date, ext = matches.groups()
+            try:
+                log_date = datetime.strptime(date, '%Y%m%d')
+            except ValueError:
+                continue
+
             if latest_date is None or log_date > latest_date:
                 latest_date = log_date
                 latest_log = file
     if latest_log:
         return LogFile(path.join(logs_path, latest_log), latest_date)
-    else:
-        return None
 
 
 def parse_log_file(log_file, threshold=100):
@@ -119,18 +121,19 @@ def write_report(data, report_path):
     try:
         temp.write(report)
         shutil.move(temp.name, report_path)
-    except Exception:
+    finally:
         temp.close()
 
 
 def get_config(default_config, external_config_path):
+    base_conf = dict(default_config)
     external_config = None
     with open(external_config_path, 'r') as f:
         external_config = json.load(f)
 
     if external_config:
-        default_config.update(external_config)
-    return default_config
+        base_conf.update(external_config)
+    return base_conf
 
 
 def main(default_config):
